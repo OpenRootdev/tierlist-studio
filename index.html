@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="A free tier list maker: drag in your own images, snap them into tiers or place them anywhere, add text under each one, restyle everything and export a PNG.">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Tier List Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Bebas+Neue&family=Archivo+Black&family=Playfair+Display:wght@700&family=Space+Mono:wght@400;700&family=Caveat:wght@600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+/* Layout: sticky tool strip on top, the tier board as the stage, an "Unranked" tray below, design drawer slides in from the right. */
+:root{
+  color-scheme:dark;
+  --app-bg:#19181b; --panel:#232226; --panel-2:#2d2b31; --line:#3b3940; --fg:#ecebef; --muted:#9b97a3;
+  --accent:#ffbf7f; --accent-ink:#2a1a08; --danger:#ff8a8a;
+  --font-ui:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"Space Mono",ui-monospace,Consolas,monospace;
+}
+html,body{height:100%}
+body{background:var(--app-bg);color:var(--fg);font-family:var(--font-ui);font-size:14px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- toolbar ---------- */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--panel);border-bottom:1px solid var(--line);
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.brand{font-weight:700;letter-spacing:.01em;margin-right:6px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.brand i{display:inline-grid;grid-template-columns:repeat(2,7px);gap:2px}
+.brand i b{width:7px;height:7px;display:block}
+.grp{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+.btn{background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:6px 11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;line-height:1.2}
+.btn:hover{border-color:#57535e}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--danger)}
+.btn[disabled]{opacity:.4;cursor:default}
+.btn svg{width:16px;height:16px;flex:none}
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;padding:6px 10px;border-radius:7px;border:1px solid var(--line);background:var(--panel-2);user-select:none}
+.switch input{appearance:none;width:30px;height:17px;border-radius:9px;background:#4a4750;position:relative;cursor:pointer;margin:0;flex:none}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:left .15s}
+.switch input:checked{background:var(--accent)}
+.switch input:checked::after{left:15px}
+.spacer{flex:1}
+.hint{width:100%;color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.hint kbd{font-family:var(--font-mono);font-size:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+
+/* ---------- stage ---------- */
+main{padding-block:20px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
+.stage{overflow-x:auto;max-width:100%}
+.board{width:var(--b-width);max-width:none;background:var(--b-page);padding:var(--b-pad-board);font-family:var(--b-font);box-sizing:border-box}
+.board-title{color:var(--b-title-c);font-size:var(--b-title-fs);font-weight:700;padding:4px 2px 12px;outline:none;line-height:1.15;text-wrap:balance}
+.board-title:empty::before{content:"Untitled tier list";opacity:.45}
+.no-title .board-title{display:none}
+.rows{border:var(--b-bw) solid var(--b-border);border-bottom:0}
+.row{display:flex;border-bottom:var(--b-bw) solid var(--b-border);min-height:var(--b-row-h)}
+.label{width:var(--b-label-w);flex:none;display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;box-sizing:border-box;color:var(--b-label-c);font-size:var(--b-label-fs);font-weight:var(--b-label-fw);overflow-wrap:anywhere;line-height:1.2}
+.label-text{outline:none;min-width:1ch;white-space:pre-wrap;cursor:text}
+.label-text:focus{box-shadow:0 0 0 2px rgba(0,0,0,.35);border-radius:2px}
+.drop{flex:1;min-width:0;position:relative;background:var(--b-row);display:flex;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;gap:var(--b-gap);padding:var(--b-pad);min-height:var(--b-row-h);box-sizing:border-box;transition:box-shadow .1s}
+.drop.over{box-shadow:inset 0 0 0 2px var(--accent)}
+.drop.over-free{box-shadow:inset 0 0 0 2px #7fbfff}
+.ctrl{flex:none;width:80px;background:var(--b-ctrl);color:var(--b-ctrl-fg);display:flex;align-items:center;justify-content:center;gap:4px}
+.no-ctrl .ctrl{display:none}
+.ctrl button{background:none;border:0;color:inherit;cursor:pointer;padding:2px;display:grid;place-items:center;border-radius:4px}
+.ctrl button:hover{background:rgba(255,255,255,.12)}
+.ctrl .gear svg{width:30px;height:30px}
+.ctrl .arrows{display:flex;flex-direction:column;gap:2px}
+.ctrl .arrows svg{width:20px;height:20px}
+
+/* ---------- items ---------- */
+.item{width:calc(var(--b-item) * var(--s,1));flex:none;position:relative;cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none;border-radius:var(--b-radius)}
+.item.free{position:absolute;z-index:2}
+.pic{width:100%;height:calc(var(--b-item) * var(--s,1) * var(--b-ratio));background-size:var(--b-fit);background-position:center;background-repeat:no-repeat;border-radius:var(--b-radius)}
+.pic.text{display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;box-sizing:border-box;font-weight:700;line-height:1.1;overflow-wrap:anywhere;font-size:calc(var(--b-item) * var(--s,1) * .17)}
+.cap{font-size:var(--b-cap-fs);color:var(--b-cap-c);background:var(--b-cap-bg);text-align:center;line-height:1.25;padding:2px 3px;overflow-wrap:anywhere;white-space:pre-wrap}
+.cap:empty{display:none}
+.no-caps .cap{display:none}
+.item.sel{outline:2px solid var(--accent);outline-offset:1px}
+.item-edit{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:5px;border:0;background:rgba(20,20,22,.85);color:#fff;cursor:pointer;display:none;place-items:center;padding:0}
+.item-edit svg{width:14px;height:14px}
+.item.sel .item-edit{display:grid}
+.item.dragging{opacity:.25}
+.drag-ghost{position:fixed;left:0;top:0;z-index:100;pointer-events:none;opacity:.92;filter:drop-shadow(0 8px 18px rgba(0,0,0,.55));cursor:grabbing}
+.ph{flex:none;background:rgba(255,191,127,.18);outline:2px dashed var(--accent);outline-offset:-2px;border-radius:var(--b-radius)}
+.exporting .item.sel{outline:none}
+.exporting .item-edit{display:none!important}
+.exporting.no-export-ctrl .ctrl{display:none}
+
+.add-tier{align-self:flex-start}
+
+/* ---------- pool ---------- */
+.tray{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;max-width:100%}
+.tray-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.tray-head h2{margin:0;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.tray-head p{margin:0;color:var(--muted);font-size:12.5px;flex:1;min-width:200px}
+#pool{background:transparent;min-height:120px;padding:10px;gap:8px;font-family:var(--b-font)}
+#pool:empty::after{content:"Drop images here, paste with Ctrl+V, or use Add images.";color:var(--muted);font-family:var(--font-ui);align-self:center;margin:auto}
+.drop-veil{position:fixed;inset:0;z-index:60;pointer-events:none;border:3px dashed var(--accent);background:rgba(255,191,127,.06);display:none}
+.drag-files .drop-veil{display:block}
+
+/* ---------- popover ---------- */
+.pop{position:fixed;z-index:80;width:288px;max-width:calc(100vw - 24px);background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 18px 40px rgba(0,0,0,.5);padding:14px;display:flex;flex-direction:column;gap:12px;max-height:calc(100vh - 24px);overflow:auto;box-sizing:border-box}
+.pop h3{margin:0;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field>span{font-size:12px;color:var(--muted)}
+.field textarea,.field input[type=text],.field input[type=number],.field select{background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%;box-sizing:border-box;resize:vertical}
+.inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=color]{width:36px;height:30px;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--panel-2);cursor:pointer;flex:none}
+input[type=range]{flex:1;accent-color:var(--accent);min-width:0}
+.swatches{display:flex;flex-wrap:wrap;gap:5px}
+.swatches button{width:22px;height:22px;border-radius:4px;border:1px solid rgba(0,0,0,.4);cursor:pointer;padding:0}
+.pop .actions{display:flex;flex-wrap:wrap;gap:6px}
+
+/* ---------- design drawer ---------- */
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:70;width:330px;max-width:100vw;background:var(--panel);border-left:1px solid var(--line);box-shadow:-18px 0 40px rgba(0,0,0,.35);
+  transform:translateX(105%);transition:transform .2s ease;display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px);box-sizing:border-box}
+.drawer.open{transform:none}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+.drawer-head h2{margin:0;font-size:16px}
+.drawer-body{overflow:auto;padding:14px 16px 30px;display:flex;flex-direction:column;gap:20px}
+.drawer section{display:flex;flex-direction:column;gap:10px}
+.drawer section h3{margin:0;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.drow{display:grid;grid-template-columns:110px 1fr auto;align-items:center;gap:10px;font-size:13px}
+.drow output{font-family:var(--font-mono);font-size:11px;color:var(--muted);min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
+.drow select{background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%}
+.drow input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px;justify-self:start}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:90;background:#f1eff4;color:#1c1b1f;padding:9px 16px;border-radius:8px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100vw - 40px)}
+@media (prefers-reduced-motion:reduce){.drawer,.switch input::after,.drop{transition:none}}
+@media (max-width:640px){.hint{display:none}.brand span{display:none}}
+</style>
+
+</head>
+<body>
+<header class="bar" id="bar">
+  <div class="brand"><i><b style="background:#ff7f7f"></b><b style="background:#ffbf7f"></b><b style="background:#ffff7f"></b><b style="background:#bfff7f"></b></i><span>Tier List Studio</span></div>
+  <div class="grp">
+    <button class="btn primary" id="btnAdd" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add images</button>
+    <button class="btn" id="btnText" type="button">Add text tile</button>
+  </div>
+  <label class="switch" title="On: items line up in slots. Off: drop items anywhere. Hold Alt while dragging to flip it."><input type="checkbox" id="snapToggle" checked> Snap to slots</label>
+  <div class="sep"></div>
+  <div class="grp">
+    <button class="btn ghost" id="btnUndo" type="button" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>Undo</button>
+    <button class="btn ghost" id="btnRedo" type="button" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>Redo</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="grp">
+    <button class="btn" id="btnDesign" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Design</button>
+    <button class="btn" id="btnExport" type="button">Export PNG</button>
+    <button class="btn" id="btnCopy" type="button">Copy image</button>
+    <button class="btn ghost" id="btnMore" type="button" aria-haspopup="true">File ▾</button>
+  </div>
+  <div class="hint">
+    <span>Drag items anywhere</span><span>Hold <kbd>Alt</kbd> while dragging to flip snapping</span><span>Double-click an item to edit its text</span><span>Click a tier label to rename it</span><span><kbd>Del</kbd> removes the selected item</span><span><kbd>Ctrl</kbd>+<kbd>D</kbd> duplicates</span>
+  </div>
+</header>
+
+<main>
+  <div class="stage" id="stage">
+    <div class="board" id="board">
+      <div class="board-title" id="boardTitle" contenteditable="plaintext-only" spellcheck="false"></div>
+      <div class="rows" id="rows"></div>
+    </div>
+  </div>
+  <button class="btn add-tier" id="btnAddTier" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add tier</button>
+  <section class="tray" aria-label="Unranked items">
+    <div class="tray-head"><h2>Unranked</h2><p>Images you add land here. Drag them onto a tier, or drop files straight onto any tier.</p><button class="btn ghost danger" id="btnClearPool" type="button">Clear unranked</button></div>
+    <div class="drop" id="pool" data-container="pool"></div>
+  </section>
+</main>
+
+<aside class="drawer" id="drawer" aria-label="Design settings">
+  <div class="drawer-head"><h2>Design</h2><button class="btn ghost" id="btnCloseDrawer" type="button">Close</button></div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<div class="drop-veil"></div>
+<div class="pop" id="pop" hidden></div>
+<div class="toast" id="toast" hidden></div>
+<input type="file" id="fileImages" accept="image/*" multiple hidden>
+<input type="file" id="fileReplace" accept="image/*" hidden>
+<input type="file" id="fileProject" accept=".json,application/json" hidden>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2, 10);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const ICON = {
+  gear: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>',
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>'
+};
+
+const TIER_COLORS = ['#ff7f7f','#ffbf7f','#ffdf7f','#ffff7f','#bfff7f','#7fff7f','#7fffff','#7fbfff','#7f7fff','#ff7fff','#bf7fbf','#3b3b3b','#858585','#cfcfcf','#f7f7f7'];
+
+const DEFAULT_STYLE = {
+  showTitle:false, titleSize:28, titleColor:'#ffffff',
+  boardWidth:1120, boardPad:10, pageBg:'#252326', font:'Arial, Helvetica, sans-serif',
+  labelWidth:100, rowHeight:80, labelSize:14, labelWeight:'400', labelColor:'#333333',
+  rowBg:'#1a1a17', borderColor:'#000000', borderWidth:1,
+  showControls:true, ctrlBg:'#000000', ctrlFg:'#ffffff',
+  itemSize:80, ratio:'1', fit:'cover', gap:0, pad:0, radius:0, grid:0,
+  showCaptions:true, capSize:11, capColor:'#ffffff', capBgOn:false, capBg:'#000000',
+  exportControls:false, exportScale:'2'
+};
+const PRESETS = {
+  'Classic': {},
+  'Light': { pageBg:'#f3f2f0', rowBg:'#ffffff', borderColor:'#d9d6d0', ctrlBg:'#ebe9e5', ctrlFg:'#3a3836', titleColor:'#1d1c1b', capColor:'#2b2a29' },
+  'Poster': { pageBg:'#111014', rowBg:'#1c1b20', borderColor:'#111014', borderWidth:4, font:'"Bebas Neue", Impact, sans-serif', labelSize:40, labelColor:'#111014', titleColor:'#ffffff', showTitle:true, titleSize:56, gap:6, pad:6, radius:6, capSize:15, boardPad:24 },
+  'Rounded': { pageBg:'#1e2027', rowBg:'#2a2d36', borderColor:'#1e2027', borderWidth:3, labelWeight:'700', labelSize:22, radius:10, gap:6, pad:6, font:'"DM Sans", system-ui, sans-serif', ctrlBg:'#2a2d36', capBgOn:true, capBg:'#14151a' }
+};
+const FONTS = [
+  ['Arial (classic)','Arial, Helvetica, sans-serif'],
+  ['DM Sans','"DM Sans", system-ui, sans-serif'],
+  ['Bebas Neue','"Bebas Neue", Impact, sans-serif'],
+  ['Archivo Black','"Archivo Black", Arial Black, sans-serif'],
+  ['Playfair Display','"Playfair Display", Georgia, serif'],
+  ['Space Mono','"Space Mono", ui-monospace, monospace'],
+  ['Caveat (handwritten)','"Caveat", "Comic Sans MS", cursive']
+];
+
+function defaultRows(){
+  return [['S','#ff7f7f'],['A','#ffbf7f'],['B','#ffdf7f'],['C','#ffff7f'],['D','#bfff7f']]
+    .map(([label,color]) => ({id:uid(), label, color, textColor:'', fontSize:''}));
+}
+
+let imgs = {};   // imgId -> data URL (kept outside undo history)
+let state;
+let sel = null;
+const history = [], future = [];
+let snapshot = '';
+
+/* ---------- sample tiles so the board opens in a working state ---------- */
+function makeSample(i){
+  const c = document.createElement('canvas'); c.width = c.height = 240;
+  const g = c.getContext('2d');
+  const pal = [['#2b4c7e','#7fbfff','#e8f1ff'],['#7a2e3a','#ff7f7f','#ffe5e5'],['#2e6b4a','#bfff7f','#f0ffe0'],['#6b4b1f','#ffbf7f','#fff0de'],['#4b2e7a','#bf9fff','#f1e8ff'],['#1f5f66','#7fffff','#e0ffff']][i % 6];
+  const grad = g.createLinearGradient(0,0,240,240); grad.addColorStop(0,pal[0]); grad.addColorStop(1,pal[1]);
+  g.fillStyle = grad; g.fillRect(0,0,240,240);
+  g.fillStyle = pal[2]; g.globalAlpha = .9;
+  g.beginPath();
+  if (i%3===0) g.arc(120,110,62,0,Math.PI*2);
+  else if (i%3===1){ g.moveTo(120,40); g.lineTo(190,170); g.lineTo(50,170); g.closePath(); }
+  else g.rect(62,52,116,116);
+  g.fill(); g.globalAlpha = 1;
+  g.fillStyle = pal[0]; g.font = 'bold 30px Arial'; g.textAlign='center'; g.fillText('EXAMPLE', 120, 218);
+  const id = 'img_' + uid(); imgs[id] = c.toDataURL('image/png'); return id;
+}
+function freshState(withSamples){
+  const rows = defaultRows();
+  const items = [];
+  if (withSamples){
+    const where = [rows[0].id, rows[1].id, rows[1].id, 'pool','pool','pool'];
+    where.forEach((row,i) => items.push({id:uid(), img:makeSample(i), caption:'Example ' + (i+1), row, free:false, x:0, y:0, scale:1}));
+  }
+  return { v:1, title:'My tier list', snap:true, style:{...DEFAULT_STYLE}, rows, items };
+}
+
+/* ---------- persistence (per-browser convenience) ---------- */
+const store = {
+  db:null,
+  open(){ if (this.db) return Promise.resolve(this.db);
+    return new Promise((res,rej) => { const r = indexedDB.open('tierlist-studio',1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(this.db = r.result); r.onerror = () => rej(r.error); }); },
+  async get(k){ const db = await this.open(); return new Promise((res,rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); },
+  async set(k,v){ const db = await this.open(); return new Promise((res,rej) => { const t = db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+};
+function usedImgs(){ const o = {}; state.items.forEach(i => { if (i.img && imgs[i.img]) o[i.img] = imgs[i.img]; }); return o; }
+let saveTimer;
+function save(){ clearTimeout(saveTimer); saveTimer = setTimeout(async () => { try { await store.set('doc', {state, imgs:usedImgs()}); } catch(e){} }, 350); }
+
+/* ---------- history ---------- */
+function commit(){
+  const now = JSON.stringify(state);
+  if (now === snapshot){ render(); return; }
+  history.push(snapshot); if (history.length > 80) history.shift();
+  future.length = 0; snapshot = now;
+  save(); render();
+}
+function undo(){ if (!history.length) return; future.push(snapshot); snapshot = history.pop(); state = JSON.parse(snapshot); closePop(); save(); render(); }
+function redo(){ if (!future.length) return; history.push(snapshot); snapshot = future.pop(); state = JSON.parse(snapshot); closePop(); save(); render(); }
+
+/* ---------- style ---------- */
+function applyStyle(){
+  const s = state.style, r = document.documentElement.style;
+  const px = v => v + 'px';
+  const set = (k,v) => r.setProperty(k,v);
+  set('--b-page', s.pageBg); set('--b-row', s.rowBg); set('--b-border', s.borderColor); set('--b-bw', px(s.borderWidth));
+  set('--b-ctrl', s.ctrlBg); set('--b-ctrl-fg', s.ctrlFg); set('--b-width', px(s.boardWidth)); set('--b-pad-board', px(s.boardPad));
+  set('--b-label-w', px(s.labelWidth)); set('--b-row-h', px(s.rowHeight)); set('--b-label-fs', px(s.labelSize)); set('--b-label-fw', s.labelWeight);
+  set('--b-label-c', s.labelColor); set('--b-font', s.font); set('--b-item', px(s.itemSize)); set('--b-ratio', s.ratio); set('--b-fit', s.fit);
+  set('--b-gap', px(s.gap)); set('--b-pad', px(s.pad)); set('--b-radius', px(s.radius));
+  set('--b-cap-fs', px(s.capSize)); set('--b-cap-c', s.capColor); set('--b-cap-bg', s.capBgOn ? s.capBg : 'transparent');
+  set('--b-title-fs', px(s.titleSize)); set('--b-title-c', s.titleColor);
+  const b = document.body.classList;
+  b.toggle('no-title', !s.showTitle); b.toggle('no-ctrl', !s.showControls); b.toggle('no-caps', !s.showCaptions);
+  b.toggle('no-export-ctrl', !s.exportControls);
+}
+
+/* ---------- render ---------- */
+function itemHTML(it){
+  const pic = it.img
+    ? `<div class="pic" style="background-image:url('${imgs[it.img] || ''}')"></div>`
+    : `<div class="pic text" style="background:${esc(it.tileBg || '#3b3b3b')};color:${esc(it.tileFg || '#ffffff')}">${esc(it.tileText || '')}</div>`;
+  const pos = it.free ? `left:${it.x}px;top:${it.y}px;` : '';
+  return `<div class="item${it.free?' free':''}${sel===it.id?' sel':''}" data-id="${it.id}" style="--s:${it.scale||1};${pos}">${pic}<div class="cap">${esc(it.caption)}</div><button class="item-edit" type="button" aria-label="Edit item">${ICON.pen}</button></div>`;
+}
+function render(){
+  applyStyle();
+  const t = $('#boardTitle'); if (document.activeElement !== t) t.textContent = state.title;
+  $('#rows').innerHTML = state.rows.map((row,i) => `
+    <div class="row" data-row="${row.id}">
+      <div class="label" style="background:${esc(row.color)};${row.textColor?`color:${esc(row.textColor)};`:''}${row.fontSize?`font-size:${+row.fontSize}px;`:''}">
+        <div class="label-text" contenteditable="plaintext-only" spellcheck="false" data-label="${row.id}">${esc(row.label)}</div>
+      </div>
+      <div class="drop" data-container="${row.id}">${state.items.filter(it => it.row===row.id).map(itemHTML).join('')}</div>
+      <div class="ctrl">
+        <button class="gear" type="button" data-gear="${row.id}" aria-label="Tier settings">${ICON.gear}</button>
+        <div class="arrows">
+          <button type="button" data-move="-1" data-rid="${row.id}" aria-label="Move tier up"${i===0?' disabled':''}>${ICON.up}</button>
+          <button type="button" data-move="1" data-rid="${row.id}" aria-label="Move tier down"${i===state.rows.length-1?' disabled':''}>${ICON.down}</button>
+        </div>
+      </div>
+    </div>`).join('');
+  $('#pool').innerHTML = state.items.filter(it => it.row==='pool').map(itemHTML).join('');
+  $('#snapToggle').checked = state.snap;
+  $('#btnUndo').disabled = !history.length; $('#btnRedo').disabled = !future.length;
+  layoutFree();
+  if ($('#drawer').classList.contains('open')) syncDrawer();
+}
+function layoutFree(){
+  document.querySelectorAll('[data-container]').forEach(c => {
+    let max = 0;
+    c.querySelectorAll(':scope > .item.free').forEach(el => { max = Math.max(max, el.offsetTop + el.offsetHeight); });
+    const base = c.id === 'pool' ? '120px' : 'var(--b-row-h)';
+    c.style.minHeight = max ? `max(${base}, ${max + 4}px)` : '';
+  });
+}
+
+/* ---------- images in ---------- */
+function readImage(file){
+  return new Promise((res) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const im = new Image();
+      im.onload = () => {
+        const MAX = 600, k = Math.min(1, MAX / Math.max(im.width, im.height));
+        const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(im.width*k)); c.height = Math.max(1, Math.round(im.height*k));
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        let url = c.toDataURL('image/webp', .9); if (!url.startsWith('data:image/webp')) url = c.toDataURL('image/png');
+        const id = 'img_' + uid(); imgs[id] = url; res(id);
+      };
+      im.onerror = () => res(null);
+      im.src = fr.result;
+    };
+    fr.onerror = () => res(null);
+    fr.readAsDataURL(file);
+  });
+}
+async function addFiles(files, container='pool', at=null){
+  const list = [...files].filter(f => f.type.startsWith('image/'));
+  if (!list.length){ toast('Only image files can be added.'); return; }
+  const snapMode = at ? at.snap : true;
+  let n = 0;
+  for (const f of list){
+    const img = await readImage(f); if (!img) continue;
+    const it = {id:uid(), img, caption:'', row:container, free:false, x:0, y:0, scale:1};
+    if (!snapMode && at){ it.free = true; it.x = Math.max(0, at.x + n*14); it.y = Math.max(0, at.y + n*14); }
+    if (snapMode && at && at.beforeId){ const k = state.items.findIndex(i => i.id === at.beforeId); state.items.splice(k + n, 0, it); }
+    else state.items.push(it);
+    n++;
+  }
+  if (n){ commit(); toast(n === 1 ? 'Image added' : n + ' images added'); }
+}
+
+/* ---------- drag & drop (pointer) ---------- */
+let drag = null;
+function snapIndex(cont, x, y, exclude){
+  const els = [...cont.querySelectorAll(':scope > .item:not(.free)')].filter(el => el.dataset.id !== exclude);
+  for (let i = 0; i < els.length; i++){
+    const r = els[i].getBoundingClientRect();
+    if (y < r.top) return {i, els};
+    if (y <= r.bottom && x < r.left + r.width/2) return {i, els};
+  }
+  return {i: els.length, els};
+}
+function clearOver(){ document.querySelectorAll('.drop.over,.drop.over-free').forEach(d => d.classList.remove('over','over-free')); }
+document.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  if (!e.target.closest('.pop') && !e.target.closest('#pop') && $('#pop').hidden === false && !e.target.closest('[data-gear]') && !e.target.closest('#btnMore')) closePop();
+  if (e.target.closest('.item-edit')) return;
+  const el = e.target.closest('.item');
+  if (!el){ if (e.target.closest('.drop') || e.target.closest('.board')) select(null); return; }
+  select(el.dataset.id);
+  const r = el.getBoundingClientRect();
+  drag = {id:el.dataset.id, el, sx:e.clientX, sy:e.clientY, ox:e.clientX - r.left, oy:e.clientY - r.top, w:r.width, h:r.height, started:false};
+  e.preventDefault();
+});
+window.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (!drag.started){
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 4) return;
+    drag.started = true;
+    const g = drag.el.cloneNode(true); g.classList.add('drag-ghost'); g.classList.remove('sel','free','dragging');
+    g.style.width = drag.w + 'px'; g.style.left = '0'; g.style.top = '0';
+    document.body.appendChild(g); drag.ghost = g;
+    drag.el.classList.add('dragging');
+    drag.ph = document.createElement('div'); drag.ph.className = 'ph';
+    drag.ph.style.width = drag.w + 'px'; drag.ph.style.height = drag.h + 'px';
+  }
+  drag.ghost.style.transform = `translate(${e.clientX - drag.ox}px, ${e.clientY - drag.oy}px)`;
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  const cont = under && under.closest('[data-container]');
+  const snap = state.snap !== e.altKey;
+  clearOver();
+  if (!cont){ drag.ph.remove(); drag.target = null; return; }
+  drag.target = cont; drag.snap = snap;
+  cont.classList.add(snap ? 'over' : 'over-free');
+  if (snap){
+    const {i, els} = snapIndex(cont, e.clientX, e.clientY, drag.id);
+    drag.beforeId = els[i] ? els[i].dataset.id : null;
+    if (els[i]) { if (drag.ph.nextSibling !== els[i]) cont.insertBefore(drag.ph, els[i]); }
+    else {
+      const firstFree = cont.querySelector(':scope > .item.free');
+      if (drag.ph.parentNode !== cont || drag.ph.nextSibling !== firstFree) cont.insertBefore(drag.ph, firstFree);
+    }
+  } else drag.ph.remove();
+});
+function endDrag(e, cancel){
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (!d.started) return;
+  d.ghost.remove(); d.ph.remove(); d.el.classList.remove('dragging'); clearOver();
+  if (cancel || !d.target){ return; }
+  const it = state.items.find(i => i.id === d.id); if (!it) return;
+  const contId = d.target.dataset.container;
+  state.items = state.items.filter(i => i !== it);
+  if (d.snap){
+    it.row = contId; it.free = false;
+    if (d.beforeId){ state.items.splice(state.items.findIndex(i => i.id === d.beforeId), 0, it); }
+    else { let k = -1; state.items.forEach((i,j) => { if (i.row === contId && !i.free) k = j; }); state.items.splice(k + 1, 0, it); }
+  } else {
+    const cr = d.target.getBoundingClientRect();
+    let x = e.clientX - d.ox - cr.left - d.target.clientLeft;
+    let y = e.clientY - d.oy - cr.top - d.target.clientTop;
+    const gsz = +state.style.grid;
+    if (gsz > 0){ x = Math.round(x/gsz)*gsz; y = Math.round(y/gsz)*gsz; }
+    x = Math.max(0, Math.min(x, d.target.clientWidth - d.w)); y = Math.max(0, y);
+    Object.assign(it, {row:contId, free:true, x:Math.round(x), y:Math.round(y)});
+    state.items.push(it);
+  }
+  commit();
+}
+window.addEventListener('pointerup', e => endDrag(e, false));
+window.addEventListener('pointercancel', e => endDrag(e, true));
+
+function select(id){
+  if (sel === id) return;
+  sel = id;
+  document.querySelectorAll('.item.sel').forEach(el => el.classList.remove('sel'));
+  if (id){ const el = document.querySelector(`.item[data-id="${id}"]`); if (el) el.classList.add('sel'); }
+}
+
+/* ---------- native file drop ---------- */
+let fileDragDepth = 0;
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+document.addEventListener('dragenter', e => { if (!hasFiles(e)) return; fileDragDepth++; document.body.classList.add('drag-files'); });
+document.addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--fileDragDepth <= 0){ fileDragDepth = 0; document.body.classList.remove('drag-files'); clearOver(); } });
+document.addEventListener('dragover', e => {
+  if (!hasFiles(e)) return; e.preventDefault();
+  const cont = e.target.closest && e.target.closest('[data-container]');
+  clearOver(); if (cont) cont.classList.add(state.snap !== e.altKey ? 'over' : 'over-free');
+});
+document.addEventListener('drop', e => {
+  if (!hasFiles(e)) return; e.preventDefault();
+  fileDragDepth = 0; document.body.classList.remove('drag-files'); clearOver();
+  const cont = e.target.closest && e.target.closest('[data-container]');
+  if (!cont){ addFiles(e.dataTransfer.files, 'pool'); return; }
+  const snap = state.snap !== e.altKey;
+  const cr = cont.getBoundingClientRect();
+  const {i, els} = snapIndex(cont, e.clientX, e.clientY, null);
+  addFiles(e.dataTransfer.files, cont.dataset.container, {snap, x:e.clientX - cr.left - state.style.itemSize/2, y:e.clientY - cr.top - state.style.itemSize/2, beforeId: els[i] ? els[i].dataset.id : null});
+});
+document.addEventListener('paste', e => {
+  const files = [...(e.clipboardData?.items || [])].filter(i => i.kind === 'file' && i.type.startsWith('image/')).map(i => i.getAsFile()).filter(Boolean);
+  if (!files.length) return;
+  e.preventDefault(); addFiles(files, 'pool');
+});
+
+/* ---------- inline text editing ---------- */
+document.addEventListener('input', e => {
+  const l = e.target.closest('[data-label]');
+  if (l){ const row = state.rows.find(r => r.id === l.dataset.label); if (row) row.label = l.innerText.replace(/\n$/,''); return; }
+  if (e.target.id === 'boardTitle') state.title = e.target.innerText;
+});
+document.addEventListener('focusout', e => {
+  if (e.target.closest && (e.target.closest('[data-label]') || e.target.id === 'boardTitle')) commit();
+});
+document.addEventListener('keydown', e => {
+  const editing = e.target.closest && (e.target.closest('[contenteditable]') || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName));
+  if (e.key === 'Enter' && !e.shiftKey && e.target.closest && e.target.closest('[contenteditable]')){ e.preventDefault(); e.target.blur(); return; }
+  if (e.key === 'Escape'){ if (!$('#pop').hidden) closePop(); else if ($('#drawer').classList.contains('open')) toggleDrawer(false); else select(null); if (editing) e.target.blur(); return; }
+  if (editing) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === 'z'){ e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if (mod && e.key.toLowerCase() === 'y'){ e.preventDefault(); redo(); }
+  else if (mod && e.key.toLowerCase() === 'd' && sel){ e.preventDefault(); duplicate(sel); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && sel){ e.preventDefault(); removeItem(sel); }
+});
+
+/* ---------- item ops ---------- */
+function removeItem(id){ state.items = state.items.filter(i => i.id !== id); if (sel === id) sel = null; closePop(); commit(); }
+function duplicate(id){
+  const it = state.items.find(i => i.id === id); if (!it) return;
+  const copy = {...it, id:uid()}; if (copy.free){ copy.x += 16; copy.y += 16; }
+  state.items.splice(state.items.indexOf(it) + 1, 0, copy); sel = copy.id; commit();
+}
+function addTextTile(){
+  const it = {id:uid(), img:null, tileText:'New tile', tileBg:'#3b3b3b', tileFg:'#ffffff', caption:'', row:'pool', free:false, x:0, y:0, scale:1};
+  state.items.push(it); sel = it.id; commit();
+  const el = document.querySelector(`.item[data-id="${it.id}"]`); if (el) openItemPop(it.id, el);
+}
+
+/* ---------- popovers ---------- */
+const pop = $('#pop');
+function placePop(anchor){
+  pop.hidden = false;
+  const a = anchor.getBoundingClientRect(), p = pop.getBoundingClientRect();
+  let x = a.right + 8, y = a.top;
+  if (x + p.width > innerWidth - 12) x = a.left - p.width - 8;
+  if (x < 12) x = Math.max(12, Math.min(innerWidth - p.width - 12, a.left));
+  if (x === a.left || x < a.left && x + p.width > a.left) y = a.bottom + 8;
+  y = Math.max(12, Math.min(y, innerHeight - p.height - 12));
+  pop.style.left = x + 'px'; pop.style.top = y + 'px';
+}
+function closePop(){ if (!pop.hidden){ pop.hidden = true; pop.innerHTML = ''; pop.dataset.kind = ''; } }
+function swatchHTML(name){ return `<div class="swatches">${TIER_COLORS.map(c => `<button type="button" data-sw="${name}" data-c="${c}" style="background:${c}" aria-label="Color ${c}"></button>`).join('')}</div>`; }
+
+function openRowPop(rid, anchor){
+  const row = state.rows.find(r => r.id === rid); if (!row) return;
+  pop.dataset.kind = 'row';
+  pop.innerHTML = `
+    <h3>Tier settings</h3>
+    <label class="field"><span>Label text</span><textarea id="pRowLabel" rows="2">${esc(row.label)}</textarea></label>
+    <div class="field"><span>Label background</span><div class="inline"><input type="color" id="pRowColor" value="${esc(row.color)}"></div>${swatchHTML('row')}</div>
+    <div class="field"><span>Label text color and size</span><div class="inline"><input type="color" id="pRowText" value="${esc(row.textColor || state.style.labelColor)}"><input type="number" id="pRowSize" min="8" max="120" placeholder="Default (${state.style.labelSize}px)" value="${esc(row.fontSize)}" style="flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0"><button class="btn ghost" type="button" id="pRowResetText">Default</button></div></div>
+    <div class="actions">
+      <button class="btn" type="button" data-ra="above">Add tier above</button>
+      <button class="btn" type="button" data-ra="below">Add tier below</button>
+      <button class="btn" type="button" data-ra="clear">Move items to Unranked</button>
+      <button class="btn danger" type="button" data-ra="delete">Delete tier</button>
+    </div>`;
+  placePop(anchor);
+  const live = () => { render(); };
+  pop.querySelector('#pRowLabel').addEventListener('input', e => { row.label = e.target.value; live(); });
+  pop.querySelector('#pRowColor').addEventListener('input', e => { row.color = e.target.value; live(); });
+  pop.querySelector('#pRowText').addEventListener('input', e => { row.textColor = e.target.value; live(); });
+  pop.querySelector('#pRowSize').addEventListener('input', e => { row.fontSize = e.target.value; live(); });
+  pop.querySelector('#pRowResetText').addEventListener('click', () => { row.textColor = ''; row.fontSize = ''; pop.querySelector('#pRowSize').value=''; pop.querySelector('#pRowText').value = state.style.labelColor; commit(); });
+  pop.querySelectorAll('[data-sw]').forEach(b => b.addEventListener('click', () => { row.color = b.dataset.c; pop.querySelector('#pRowColor').value = b.dataset.c; commit(); }));
+  pop.querySelectorAll('input,textarea').forEach(i => i.addEventListener('change', () => commit()));
+  pop.querySelectorAll('[data-ra]').forEach(b => b.addEventListener('click', () => {
+    const idx = state.rows.indexOf(row), act = b.dataset.ra;
+    if (act === 'above' || act === 'below'){
+      state.rows.splice(act === 'above' ? idx : idx + 1, 0, {id:uid(), label:'New', color:TIER_COLORS[(idx + 5) % TIER_COLORS.length], textColor:'', fontSize:''});
+      closePop(); commit();
+    } else if (act === 'clear'){
+      state.items.forEach(i => { if (i.row === row.id){ i.row = 'pool'; i.free = false; } }); closePop(); commit();
+    } else if (act === 'delete'){
+      if (b.dataset.armed){ state.items.forEach(i => { if (i.row === row.id){ i.row = 'pool'; i.free = false; } }); state.rows.splice(idx,1); closePop(); commit(); }
+      else { b.dataset.armed = '1'; b.textContent = 'Click again to delete'; }
+    }
+  }));
+}
+
+function openItemPop(id, anchor){
+  const it = state.items.find(i => i.id === id); if (!it) return;
+  select(id);
+  pop.dataset.kind = 'item';
+  pop.innerHTML = `
+    <h3>${it.img ? 'Image item' : 'Text tile'}</h3>
+    ${it.img ? '' : `<label class="field"><span>Tile text</span><textarea id="pTile" rows="2">${esc(it.tileText)}</textarea></label>
+    <div class="field"><span>Tile colors (background, text)</span><div class="inline"><input type="color" id="pTileBg" value="${esc(it.tileBg || '#3b3b3b')}"><input type="color" id="pTileFg" value="${esc(it.tileFg || '#ffffff')}"></div>${swatchHTML('tile')}</div>`}
+    <label class="field"><span>Text below</span><textarea id="pCap" rows="2" placeholder="Optional caption">${esc(it.caption)}</textarea></label>
+    <div class="field"><span>Size</span><div class="inline"><input type="range" id="pScale" min="0.4" max="4" step="0.05" value="${it.scale || 1}"><output id="pScaleOut" style="font-family:var(--font-mono);font-size:11px;min-width:40px;text-align:right">${Math.round((it.scale||1)*100)}%</output></div></div>
+    <div class="field"><span>Placement</span><div class="inline">
+      <button class="btn${it.free?'':' primary'}" type="button" data-ia="snap">Snapped</button>
+      <button class="btn${it.free?' primary':''}" type="button" data-ia="free">Free</button></div></div>
+    <div class="actions">
+      ${it.img ? '<button class="btn" type="button" data-ia="replace">Replace image</button>' : ''}
+      <button class="btn" type="button" data-ia="dup">Duplicate</button>
+      <button class="btn" type="button" data-ia="pool">Send to Unranked</button>
+      <button class="btn danger" type="button" data-ia="del">Delete</button>
+    </div>`;
+  placePop(anchor);
+  const upd = (k, v) => { it[k] = v; render(); };
+  const q = s => pop.querySelector(s);
+  q('#pCap').addEventListener('input', e => upd('caption', e.target.value));
+  if (!it.img){
+    q('#pTile').addEventListener('input', e => upd('tileText', e.target.value));
+    q('#pTileBg').addEventListener('input', e => upd('tileBg', e.target.value));
+    q('#pTileFg').addEventListener('input', e => upd('tileFg', e.target.value));
+    pop.querySelectorAll('[data-sw]').forEach(b => b.addEventListener('click', () => { it.tileBg = b.dataset.c; q('#pTileBg').value = b.dataset.c; commit(); }));
+  }
+  q('#pScale').addEventListener('input', e => { q('#pScaleOut').textContent = Math.round(e.target.value*100) + '%'; upd('scale', +e.target.value); });
+  pop.querySelectorAll('input,textarea').forEach(i => i.addEventListener('change', () => commit()));
+  pop.querySelectorAll('[data-ia]').forEach(b => b.addEventListener('click', () => {
+    const a = b.dataset.ia;
+    if (a === 'snap'){ it.free = false; closePop(); commit(); }
+    else if (a === 'free'){ if (!it.free){ const el = document.querySelector(`.item[data-id="${id}"]`); it.x = el ? el.offsetLeft : 0; it.y = el ? el.offsetTop : 0; it.free = true; state.items = state.items.filter(i => i !== it).concat(it); } closePop(); commit(); }
+    else if (a === 'replace'){ replaceTarget = id; $('#fileReplace').click(); }
+    else if (a === 'dup'){ closePop(); duplicate(id); }
+    else if (a === 'pool'){ it.row = 'pool'; it.free = false; state.items = state.items.filter(i => i !== it).concat(it); closePop(); commit(); }
+    else if (a === 'del'){ removeItem(id); }
+  }));
+  setTimeout(() => (q('#pTile') || q('#pCap')).focus(), 0);
+}
+
+function openFileMenu(anchor){
+  pop.dataset.kind = 'file';
+  pop.innerHTML = `
+    <h3>File</h3>
+    <p style="margin:0;color:var(--muted);font-size:12.5px;line-height:1.45">Your list saves automatically in this browser. Save a project file to keep a copy or move it to another device.</p>
+    <div class="actions" style="flex-direction:column;align-items:stretch">
+      <button class="btn" type="button" data-fa="save">Save project file (.json)</button>
+      <button class="btn" type="button" data-fa="open">Open project file…</button>
+      <button class="btn" type="button" data-fa="clearitems">Remove all items</button>
+      <button class="btn danger" type="button" data-fa="new">Start a new blank list</button>
+    </div>`;
+  placePop(anchor);
+  pop.querySelectorAll('[data-fa]').forEach(b => b.addEventListener('click', () => {
+    const a = b.dataset.fa;
+    if (a === 'save'){ closePop(); saveProject(); }
+    else if (a === 'open'){ closePop(); $('#fileProject').click(); }
+    else if (a === 'clearitems' || a === 'new'){
+      if (!b.dataset.armed){ b.dataset.armed = '1'; b.textContent = 'Click again to confirm'; return; }
+      if (a === 'clearitems') state.items = [];
+      else { const keepStyle = state.style; state = freshState(false); state.style = keepStyle; }
+      sel = null; closePop(); commit();
+    }
+  }));
+}
+
+/* ---------- design drawer ---------- */
+const FIELDS = [
+  ['Board', [
+    {k:'showTitle', t:'check', l:'Show title'},
+    {k:'titleSize', t:'range', l:'Title size', min:14, max:96},
+    {k:'titleColor', t:'color', l:'Title color'},
+    {k:'boardWidth', t:'range', l:'Board width', min:400, max:2400, step:10},
+    {k:'boardPad', t:'range', l:'Outer padding', min:0, max:80},
+    {k:'pageBg', t:'color', l:'Background'},
+    {k:'font', t:'select', l:'Font', opts:FONTS}
+  ]],
+  ['Tiers', [
+    {k:'labelWidth', t:'range', l:'Label width', min:40, max:320},
+    {k:'rowHeight', t:'range', l:'Min height', min:30, max:300},
+    {k:'labelSize', t:'range', l:'Label size', min:8, max:96},
+    {k:'labelWeight', t:'select', l:'Label weight', opts:[['Regular','400'],['Medium','500'],['Bold','700'],['Black','900']]},
+    {k:'labelColor', t:'color', l:'Label text'},
+    {k:'rowBg', t:'color', l:'Row background'},
+    {k:'borderColor', t:'color', l:'Border color'},
+    {k:'borderWidth', t:'range', l:'Border width', min:0, max:12},
+    {k:'showControls', t:'check', l:'Show controls'},
+    {k:'ctrlBg', t:'color', l:'Controls bg'},
+    {k:'ctrlFg', t:'color', l:'Controls icons'}
+  ]],
+  ['Items', [
+    {k:'itemSize', t:'range', l:'Item size', min:30, max:300},
+    {k:'ratio', t:'select', l:'Image shape', opts:[['Square 1:1','1'],['Landscape 4:3','0.75'],['Wide 16:9','0.5625'],['Portrait 3:4','1.3333'],['Poster 2:3','1.5']]},
+    {k:'fit', t:'select', l:'Image fit', opts:[['Fill and crop','cover'],['Show whole image','contain']]},
+    {k:'gap', t:'range', l:'Gap', min:0, max:40},
+    {k:'pad', t:'range', l:'Row padding', min:0, max:40},
+    {k:'radius', t:'range', l:'Corner radius', min:0, max:60},
+    {k:'grid', t:'range', l:'Free-move grid', min:0, max:80, fmt:v => +v ? v + 'px' : 'off'}
+  ]],
+  ['Text below items', [
+    {k:'showCaptions', t:'check', l:'Show text'},
+    {k:'capSize', t:'range', l:'Text size', min:7, max:40},
+    {k:'capColor', t:'color', l:'Text color'},
+    {k:'capBgOn', t:'check', l:'Text background'},
+    {k:'capBg', t:'color', l:'Background color'}
+  ]],
+  ['Export', [
+    {k:'exportControls', t:'check', l:'Include controls'},
+    {k:'exportScale', t:'select', l:'Resolution', opts:[['1× (standard)','1'],['2× (sharp)','2'],['3× (print)','3']]}
+  ]]
+];
+function buildDrawer(){
+  const body = $('#drawerBody');
+  body.innerHTML = `<section><h3>Start from a look</h3><div class="presets">${Object.keys(PRESETS).map(p => `<button class="btn" type="button" data-preset="${p}">${p}</button>`).join('')}</div></section>` +
+    FIELDS.map(([title, fields]) => `<section><h3>${title}</h3>${fields.map(f => {
+      const id = 'd_' + f.k;
+      let ctl = '', out = '';
+      if (f.t === 'range'){ ctl = `<input type="range" id="${id}" min="${f.min}" max="${f.max}" step="${f.step||1}">`; out = `<output id="${id}_o"></output>`; }
+      else if (f.t === 'color') ctl = `<input type="color" id="${id}">`;
+      else if (f.t === 'check') ctl = `<input type="checkbox" id="${id}">`;
+      else if (f.t === 'select') ctl = `<select id="${id}">${f.opts.map(([l,v]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>`;
+      return `<label class="drow" for="${id}"><span>${f.l}</span>${ctl}${out || '<span></span>'}</label>`;
+    }).join('')}</section>`).join('') +
+    `<section><button class="btn" type="button" id="btnResetDesign">Reset design to classic</button></section>`;
+  FIELDS.flatMap(([,f]) => f).forEach(f => {
+    const el = $('#d_' + f.k);
+    const val = () => f.t === 'check' ? el.checked : f.t === 'range' ? +el.value : el.value;
+    el.addEventListener('input', () => { state.style[f.k] = val(); syncOut(f); applyStyle(); layoutFree(); });
+    el.addEventListener('change', () => { state.style[f.k] = val(); commit(); });
+  });
+  body.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => { state.style = {...DEFAULT_STYLE, ...PRESETS[b.dataset.preset], exportScale:state.style.exportScale}; commit(); }));
+  $('#btnResetDesign').addEventListener('click', () => { state.style = {...DEFAULT_STYLE}; commit(); });
+}
+function syncOut(f){ const o = $('#d_' + f.k + '_o'); if (o) o.textContent = f.fmt ? f.fmt(state.style[f.k]) : state.style[f.k] + 'px'; }
+function syncDrawer(){
+  FIELDS.flatMap(([,f]) => f).forEach(f => {
+    const el = $('#d_' + f.k); if (!el || document.activeElement === el) return;
+    const v = state.style[f.k];
+    if (f.t === 'check') el.checked = !!v; else el.value = v;
+    syncOut(f);
+  });
+}
+function toggleDrawer(open){ const d = $('#drawer'); d.classList.toggle('open', open); if (open) syncDrawer(); }
+
+/* ---------- export ---------- */
+let downloadsP = null;
+function getDownloads(){
+  if (!downloadsP) downloadsP = (async () => { try { if (window.claude && window.claude.use) return await window.claude.use('downloads'); } catch(e){} return null; })();
+  return downloadsP;
+}
+async function offerFile(filename, data){
+  const dl = await getDownloads();
+  if (dl){
+    try { await dl.save({filename, data}); toast('Saved ' + filename); }
+    catch(err){ if (err && err.code === 'declined') return; toast('Saving files isn\'t available here. Try Copy image instead.'); }
+    return;
+  }
+  try {
+    const blob = data instanceof Blob ? data : new Blob([data], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  } catch(e){ toast('Saving files isn\'t available here.'); }
+}
+async function renderPng(){
+  if (!window.html2canvas) throw new Error('The image exporter did not load. Check your connection and reload.');
+  closePop();
+  const b = document.activeElement; if (b && b.blur) b.blur();
+  document.body.classList.add('exporting');
+  try {
+    const canvas = await html2canvas($('#board'), {backgroundColor: state.style.pageBg, scale: +state.style.exportScale || 2, logging:false});
+    return await new Promise(res => canvas.toBlob(res, 'image/png'));
+  } finally { document.body.classList.remove('exporting'); }
+}
+const fileBase = () => (state.title || 'tier list').trim().replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,'-').toLowerCase() || 'tier-list';
+async function exportPng(){
+  try { toast('Rendering image…'); const blob = await renderPng(); await offerFile(fileBase() + '.png', blob); }
+  catch(e){ toast(e.message || 'Export failed.'); }
+}
+function copyPng(){
+  try {
+    if (!navigator.clipboard || !window.ClipboardItem) throw 0;
+    navigator.clipboard.write([new ClipboardItem({'image/png': renderPng()})])
+      .then(() => toast('Image copied. Paste it into Notion or a post.'))
+      .catch(() => toast('Copying images isn\'t allowed here. Use Export PNG instead.'));
+  } catch(e){ toast('Copying images isn\'t allowed here. Use Export PNG instead.'); }
+}
+function saveProject(){
+  const data = JSON.stringify({app:'tierlist-studio', v:1, state, imgs:usedImgs()});
+  offerFile(fileBase() + '.json', data);
+}
+function loadProject(obj){
+  if (!obj || !obj.state || !Array.isArray(obj.state.rows)) throw new Error('That file is not a Tier List Studio project.');
+  imgs = {...imgs, ...(obj.imgs || {})};
+  state = obj.state; state.style = {...DEFAULT_STYLE, ...state.style}; state.items = state.items || [];
+  sel = null; commit();
+}
+
+/* ---------- toast ---------- */
+let toastT;
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600); }
+
+/* ---------- wiring ---------- */
+let replaceTarget = null;
+$('#btnAdd').addEventListener('click', () => $('#fileImages').click());
+$('#fileImages').addEventListener('change', e => { addFiles(e.target.files, 'pool'); e.target.value = ''; });
+$('#fileReplace').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f || !replaceTarget) return;
+  const img = await readImage(f); const it = state.items.find(i => i.id === replaceTarget);
+  if (img && it){ it.img = img; closePop(); commit(); }
+});
+$('#fileProject').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => { try { loadProject(JSON.parse(fr.result)); toast('Project opened'); } catch(err){ toast(err.message || 'Could not read that file.'); } };
+  fr.readAsText(f);
+});
+$('#btnText').addEventListener('click', addTextTile);
+$('#snapToggle').addEventListener('change', e => { state.snap = e.target.checked; commit(); toast(state.snap ? 'Snap on: items line up in slots' : 'Snap off: drop items anywhere'); });
+$('#btnUndo').addEventListener('click', undo);
+$('#btnRedo').addEventListener('click', redo);
+$('#btnDesign').addEventListener('click', () => toggleDrawer(!$('#drawer').classList.contains('open')));
+$('#btnCloseDrawer').addEventListener('click', () => toggleDrawer(false));
+$('#btnExport').addEventListener('click', exportPng);
+$('#btnCopy').addEventListener('click', copyPng);
+$('#btnMore').addEventListener('click', e => { if (pop.dataset.kind === 'file' && !pop.hidden) closePop(); else openFileMenu(e.currentTarget); });
+$('#btnAddTier').addEventListener('click', () => { state.rows.push({id:uid(), label:'New', color:TIER_COLORS[state.rows.length % TIER_COLORS.length], textColor:'', fontSize:''}); commit(); });
+$('#btnClearPool').addEventListener('click', e => {
+  const b = e.currentTarget;
+  if (!state.items.some(i => i.row === 'pool')) return;
+  if (!b.dataset.armed){ b.dataset.armed = '1'; b.textContent = 'Click again to clear'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Clear unranked'; }, 3000); return; }
+  delete b.dataset.armed; b.textContent = 'Clear unranked';
+  state.items = state.items.filter(i => i.row !== 'pool'); commit();
+});
+document.addEventListener('click', e => {
+  const g = e.target.closest('[data-gear]');
+  if (g){ if (pop.dataset.kind === 'row' && !pop.hidden && pop.dataset.rid === g.dataset.gear){ closePop(); return; } openRowPop(g.dataset.gear, g); pop.dataset.rid = g.dataset.gear; return; }
+  const m = e.target.closest('[data-move]');
+  if (m){ const i = state.rows.findIndex(r => r.id === m.dataset.rid), j = i + +m.dataset.move; if (j < 0 || j >= state.rows.length) return; [state.rows[i], state.rows[j]] = [state.rows[j], state.rows[i]]; commit(); return; }
+  const ed = e.target.closest('.item-edit');
+  if (ed){ const el = ed.closest('.item'); openItemPop(el.dataset.id, el); }
+});
+document.addEventListener('dblclick', e => { const el = e.target.closest('.item'); if (el) openItemPop(el.dataset.id, el); });
+window.addEventListener('resize', () => { closePop(); layoutFree(); });
+
+buildDrawer();
+state = freshState(true);
+snapshot = JSON.stringify(state);
+render();
+(async () => {
+  try {
+    const saved = await store.get('doc');
+    if (saved && saved.state && Array.isArray(saved.state.rows)){
+      imgs = {...imgs, ...(saved.imgs || {})};
+      state = saved.state; state.style = {...DEFAULT_STYLE, ...state.style};
+      snapshot = JSON.stringify(state); history.length = 0; future.length = 0;
+      render();
+    }
+  } catch(e){}
+})();
+getDownloads();
+})();
+</script>
+
+</body>
+</html>
